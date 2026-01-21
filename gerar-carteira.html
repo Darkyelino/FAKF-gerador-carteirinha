@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerador de Carteira - Kung Fu</title>
+    <script src="https://unpkg.com/pdf-lib/dist/pdf-lib.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f4f9; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .container { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
+        h2 { text-align: center; color: #333; margin-bottom: 20px; }
+        form { display: flex; flex-direction: column; gap: 15px; }
+        label { font-size: 0.9em; font-weight: bold; color: #555; margin-bottom: -10px; }
+        input, select { padding: 12px; border: 1px solid #ddd; border-radius: 5px; font-size: 1em; }
+        button { padding: 12px; background-color: #d32f2f; color: white; border: none; border-radius: 5px; font-size: 1.1em; cursor: pointer; transition: background 0.3s; font-weight: bold; }
+        button:hover { background-color: #b71c1c; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h2>Emissão de Carteira</h2>
+        
+        <form id="carteiraForm">
+            <label for="tipo">Tipo de Filiação</label>
+            <select id="tipo" required>
+                <option value="atleta.pdf">Atleta</option>
+                <option value="professor.pdf">Professor</option>
+                <option value="arbitro.pdf">Árbitro</option>
+            </select>
+
+            <label for="nome">Nome Completo</label>
+            <input type="text" id="nome" required>
+
+            <label for="nascimento">Data de Nascimento</label>
+            <input type="date" id="nascimento" required>
+
+            <label for="estilo">Estilo / Graduação</label>
+            <input type="text" id="estilo" placeholder="Ex: Garra de Águia / Faixa Preta" required>
+
+            <label for="academia">Associação / Academia</label>
+            <input type="text" id="academia" required>
+
+            <button type="submit">Gerar Carteira (Frente e Verso)</button>
+        </form>
+    </div>
+
+<script>
+    const { PDFDocument, rgb } = PDFLib;
+
+    const CALIBRATION_MODE = false; 
+
+    const POSICOES = {
+        nome:       { x: 76, y: 79 },
+        nascimento: { x: 76, y: 59 },
+        estilo:     { x: 76, y: 37 },
+        academia:   { x: 76, y: 15 }
+    };
+
+    document.getElementById('carteiraForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const tipoArquivo = document.getElementById('tipo').value;
+        const nome = document.getElementById('nome').value.toUpperCase();
+        
+        const dataRaw = document.getElementById('nascimento').value;
+        const [ano, mes, dia] = dataRaw ? dataRaw.split('-') : ["0000", "00", "00"];
+        const nascimento = `${dia}/${mes}/${ano}`;
+
+        const estilo = document.getElementById('estilo').value.toUpperCase();
+        const academia = document.getElementById('academia').value.toUpperCase();
+
+        try {
+            const frontBytes = await fetch(tipoArquivo).then(res => res.arrayBuffer());
+            const pdfDoc = await PDFDocument.load(frontBytes);
+            const frontPage = pdfDoc.getPages()[0];
+            const { width, height } = frontPage.getSize();
+            
+            const backBytes = await fetch('verso.pdf').then(res => res.arrayBuffer());
+            const backPdf = await PDFDocument.load(backBytes);
+
+            const fontSize = 6; 
+            const drawField = (text, pos) => {
+                frontPage.drawText(text || "", {
+                    x: pos.x,
+                    y: pos.y,
+                    size: fontSize,
+                    color: rgb(0, 0, 0),
+                });
+            };
+
+            if (CALIBRATION_MODE) {
+                for (let y = 0; y < height; y += 10) {
+                    page.drawLine({ start: { x: 0, y: y }, end: { x: width, y: y }, color: rgb(1, 0, 0), opacity: 0.3, thickness: 0.5 });
+                    page.drawText(`${y}`, { x: 2, y: y + 1, size: 5, color: rgb(1, 0, 0) });
+                }
+                for (let x = 0; x < width; x += 20) {
+                    page.drawLine({ start: { x: x, y: 0 }, end: { x: x, y: height }, color: rgb(1, 0, 0), opacity: 0.3, thickness: 0.5 });
+                    page.drawText(`${x}`, { x: x + 1, y: height - 8, size: 5, color: rgb(1, 0, 0) });
+                }
+                page.drawText("NOME AQUI", { x: POSICOES.nome.x, y: POSICOES.nome.y, size: fontSize, color: rgb(1, 0, 0) });
+                page.drawText("NASCIMENTO", { x: POSICOES.nascimento.x, y: POSICOES.nascimento.y, size: fontSize, color: rgb(1, 0, 0) });
+                page.drawText("ESTILO AQUI", { x: POSICOES.estilo.x, y: POSICOES.estilo.y, size: fontSize, color: rgb(1, 0, 0) });
+                page.drawText("ACADEMIA AQUI", { x: POSICOES.academia.x, y: POSICOES.academia.y, size: fontSize, color: rgb(1, 0, 0) });
+            } else {
+                drawField(nome, POSICOES.nome);
+                drawField(nascimento, POSICOES.nascimento);
+                drawField(estilo, POSICOES.estilo);
+                drawField(academia, POSICOES.academia);
+            }
+
+            const [versoPage] = await pdfDoc.copyPages(backPdf, [0]);
+            
+            pdfDoc.addPage(versoPage);
+
+            const pdfBytes = await pdfDoc.save();
+            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `Carteira_${nome.replace(/\s+/g, '_')}.pdf`;
+            link.click();
+
+        } catch (error) {
+            console.error(error);
+            alert("Erro! Verifique se todos os PDFs (incluindo 'verso.pdf') estão na pasta correta.");
+        }
+    });
+</script>
+</body>
+</html>
