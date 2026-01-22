@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-<!-- 29/02/2028 -->
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
@@ -15,6 +14,7 @@
         input, select { padding: 12px; border: 1px solid #ddd; border-radius: 5px; font-size: 1em; }
         button { padding: 12px; background-color: #d32f2f; color: white; border: none; border-radius: 5px; font-size: 1.1em; cursor: pointer; transition: background 0.3s; font-weight: bold; }
         button:hover { background-color: #b71c1c; }
+        .aviso { font-size: 0.8em; color: red; text-align: center;}
     </style>
 </head>
 <body>
@@ -30,6 +30,9 @@
                 <option value="arbitro.pdf">Árbitro</option>
             </select>
 
+            <label for="foto">Foto (3x4)</label>
+            <input type="file" id="foto" accept="image/png, image/jpeg, image/jpg" required>
+
             <label for="nome">Nome Completo</label>
             <input type="text" id="nome" required>
 
@@ -37,7 +40,7 @@
             <input type="date" id="nascimento" required>
 
             <label for="estilo">Estilo / Graduação</label>
-            <input type="text" id="estilo" placeholder="Ex: Garra de Águia / Faixa Preta" required>
+            <input type="text" id="estilo" placeholder="Ex: Faixa Preta" required>
 
             <label for="academia">Associação / Academia</label>
             <input type="text" id="academia" required>
@@ -52,6 +55,11 @@
     const CALIBRATION_MODE = false; 
 
     const POSICOES = {
+        foto:       { x: 9.5, y: 12.8, w: 59, h: 79 }, 
+        
+        // Ajuste o X e Y conforme necessário
+        qrcode:     { x: 180, y: 14, w:48, h: 48 }, 
+
         nome:       { x: 76, y: 79 },
         nascimento: { x: 76, y: 59 },
         estilo:     { x: 76, y: 37 },
@@ -71,47 +79,95 @@
         const estilo = document.getElementById('estilo').value.toUpperCase();
         const academia = document.getElementById('academia').value.toUpperCase();
 
+        const fotoInput = document.getElementById('foto');
+        if (fotoInput.files.length === 0) {
+            alert("Por favor, selecione uma foto.");
+            return;
+        }
+        const fotoFile = fotoInput.files[0];
+
         try {
+            // 1. Carrega o PDF da Frente
             const frontBytes = await fetch(tipoArquivo).then(res => res.arrayBuffer());
             const pdfDoc = await PDFDocument.load(frontBytes);
             const frontPage = pdfDoc.getPages()[0];
             const { width, height } = frontPage.getSize();
             
-            const backBytes = await fetch('verso.pdf').then(res => res.arrayBuffer());
-            const backPdf = await PDFDocument.load(backBytes);
+            // 2. Carrega e insere a FOTO do usuário
+            const fotoBytes = await fotoFile.arrayBuffer();
+            let fotoImage;
+            if (fotoFile.type === 'image/png') {
+                fotoImage = await pdfDoc.embedPng(fotoBytes);
+            } else {
+                fotoImage = await pdfDoc.embedJpg(fotoBytes);
+            }
 
-            const fontSize = 6; 
-            const drawField = (text, pos) => {
-                frontPage.drawText(text || "", {
-                    x: pos.x,
-                    y: pos.y,
-                    size: fontSize,
-                    color: rgb(0, 0, 0),
-                });
-            };
+            // 3. Carrega e insere o QR CODE fixo
+            // O arquivo deve se chamar "qr-code.png" e estar na mesma pasta
+            const qrBytes = await fetch('qr-code.png').then(res => res.arrayBuffer());
+            const qrImage = await pdfDoc.embedPng(qrBytes);
 
+            // --- DESENHAR ELEMENTOS NA TELA ---
+            
             if (CALIBRATION_MODE) {
+                // Desenha retângulos vermelhos para calibrar Foto e QR Code
+                const drawRect = (pos, label) => {
+                    frontPage.drawRectangle({
+                        x: pos.x, y: pos.y, width: pos.w, height: pos.h,
+                        borderColor: rgb(1, 0, 0), borderWidth: 1,
+                    });
+                    frontPage.drawText(label, { x: pos.x, y: pos.y + pos.h + 2, size: 6, color: rgb(1, 0, 0) });
+                };
+
+                drawRect(POSICOES.foto, "FOTO");
+                drawRect(POSICOES.qrcode, "QR");
+
+                // Réguas
                 for (let y = 0; y < height; y += 10) {
-                    page.drawLine({ start: { x: 0, y: y }, end: { x: width, y: y }, color: rgb(1, 0, 0), opacity: 0.3, thickness: 0.5 });
-                    page.drawText(`${y}`, { x: 2, y: y + 1, size: 5, color: rgb(1, 0, 0) });
+                    frontPage.drawLine({ start: { x: 0, y: y }, end: { x: width, y: y }, color: rgb(1, 0, 0), opacity: 0.3, thickness: 0.5 });
+                    frontPage.drawText(`${y}`, { x: 2, y: y + 1, size: 5, color: rgb(1, 0, 0) });
                 }
                 for (let x = 0; x < width; x += 20) {
-                    page.drawLine({ start: { x: x, y: 0 }, end: { x: x, y: height }, color: rgb(1, 0, 0), opacity: 0.3, thickness: 0.5 });
-                    page.drawText(`${x}`, { x: x + 1, y: height - 8, size: 5, color: rgb(1, 0, 0) });
+                    frontPage.drawLine({ start: { x: x, y: 0 }, end: { x: x, y: height }, color: rgb(1, 0, 0), opacity: 0.3, thickness: 0.5 });
+                    frontPage.drawText(`${x}`, { x: x + 1, y: height - 8, size: 5, color: rgb(1, 0, 0) });
                 }
-                page.drawText("NOME AQUI", { x: POSICOES.nome.x, y: POSICOES.nome.y, size: fontSize, color: rgb(1, 0, 0) });
-                page.drawText("NASCIMENTO", { x: POSICOES.nascimento.x, y: POSICOES.nascimento.y, size: fontSize, color: rgb(1, 0, 0) });
-                page.drawText("ESTILO AQUI", { x: POSICOES.estilo.x, y: POSICOES.estilo.y, size: fontSize, color: rgb(1, 0, 0) });
-                page.drawText("ACADEMIA AQUI", { x: POSICOES.academia.x, y: POSICOES.academia.y, size: fontSize, color: rgb(1, 0, 0) });
+
+                // Textos de teste
+                const fontSize = 6;
+                frontPage.drawText("NOME AQUI", { x: POSICOES.nome.x, y: POSICOES.nome.y, size: fontSize, color: rgb(1, 0, 0) });
+                frontPage.drawText("NASCIMENTO", { x: POSICOES.nascimento.x, y: POSICOES.nascimento.y, size: fontSize, color: rgb(1, 0, 0) });
+                frontPage.drawText("ESTILO AQUI", { x: POSICOES.estilo.x, y: POSICOES.estilo.y, size: fontSize, color: rgb(1, 0, 0) });
+                frontPage.drawText("ACADEMIA AQUI", { x: POSICOES.academia.x, y: POSICOES.academia.y, size: fontSize, color: rgb(1, 0, 0) });
+
             } else {
+                // MODO REAL
+                // Foto
+                frontPage.drawImage(fotoImage, {
+                    x: POSICOES.foto.x, y: POSICOES.foto.y,
+                    width: POSICOES.foto.w, height: POSICOES.foto.h,
+                });
+
+                // QR Code
+                frontPage.drawImage(qrImage, {
+                    x: POSICOES.qrcode.x, y: POSICOES.qrcode.y,
+                    width: POSICOES.qrcode.w, height: POSICOES.qrcode.h,
+                });
+
+                // Textos
+                const fontSize = 6;
+                const drawField = (text, pos) => {
+                    frontPage.drawText(text || "", { x: pos.x, y: pos.y, size: fontSize, color: rgb(0, 0, 0) });
+                };
                 drawField(nome, POSICOES.nome);
                 drawField(nascimento, POSICOES.nascimento);
                 drawField(estilo, POSICOES.estilo);
                 drawField(academia, POSICOES.academia);
             }
 
+            // 4. Copia o Verso e Salva
+            const backBytes = await fetch('verso.pdf').then(res => res.arrayBuffer());
+            const backPdf = await PDFDocument.load(backBytes);
             const [versoPage] = await pdfDoc.copyPages(backPdf, [0]);
-            
             pdfDoc.addPage(versoPage);
 
             const pdfBytes = await pdfDoc.save();
@@ -123,7 +179,7 @@
 
         } catch (error) {
             console.error(error);
-            alert("Erro! Verifique se todos os PDFs (incluindo 'verso.pdf') estão na pasta correta.");
+            alert("Erro! Verifique se todos os arquivos (incluindo qr-code.png) estão na pasta.");
         }
     });
 </script>
