@@ -45,143 +45,130 @@
             <label for="academia">Associação / Academia</label>
             <input type="text" id="academia" required>
 
+            <label for="numero">Número Filiação:</label>
+            <input type="text" id="numero" required>
+
             <button type="submit">Gerar Carteira</button>
         </form>
     </div>
 
-<script>
-    const { PDFDocument, rgb } = PDFLib;
+    <script>
+        const { PDFDocument, rgb } = PDFLib;
 
-    const CALIBRATION_MODE = false; 
+        const CALIBRATION_MODE = false;
 
-    const POSICOES = {
-        foto:       { x: 9.5, y: 12.8, w: 59, h: 79 }, 
-        
-        // Ajuste o X e Y conforme necessário
-        qrcode:     { x: 180, y: 14, w:48, h: 48 }, 
+        const DATA_VALIDADE = "29/02/2028";
+        const POSICOES = {
+            numero:     { x: 188, y: 98 },
+            foto:       { x: 9.5, y: 12.8, w: 59, h: 79 },
+            qrcode:     { x: 180, y: 14, w: 48, h: 48 }, 
+            validade:   { x: 188, y: 75 },
+            nome:       { x: 76, y: 79 },
+            nascimento: { x: 76, y: 59 },
+            estilo:     { x: 76, y: 37 },
+            academia:   { x: 76, y: 15 }
+        };
 
-        nome:       { x: 76, y: 79 },
-        nascimento: { x: 76, y: 59 },
-        estilo:     { x: 76, y: 37 },
-        academia:   { x: 76, y: 15 }
-    };
+        document.getElementById('carteiraForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
 
-    document.getElementById('carteiraForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
+            const tipoArquivo = document.getElementById('tipo').value;
+            const nome = document.getElementById('nome').value.toUpperCase();
+            const numero = document.getElementById('numero').value.toUpperCase();
+            const dataRaw = document.getElementById('nascimento').value;
+            const [ano, mes, dia] = dataRaw ? dataRaw.split('-') : ["0000", "00", "00"];
+            const nascimento = `${dia}/${mes}/${ano}`;
 
-        const tipoArquivo = document.getElementById('tipo').value;
-        const nome = document.getElementById('nome').value.toUpperCase();
-        
-        const dataRaw = document.getElementById('nascimento').value;
-        const [ano, mes, dia] = dataRaw ? dataRaw.split('-') : ["0000", "00", "00"];
-        const nascimento = `${dia}/${mes}/${ano}`;
+            const estilo = document.getElementById('estilo').value.toUpperCase();
+            const academia = document.getElementById('academia').value.toUpperCase();
 
-        const estilo = document.getElementById('estilo').value.toUpperCase();
-        const academia = document.getElementById('academia').value.toUpperCase();
-
-        const fotoInput = document.getElementById('foto');
-        if (fotoInput.files.length === 0) {
-            alert("Por favor, selecione uma foto.");
-            return;
-        }
-        const fotoFile = fotoInput.files[0];
-
-        try {
-            // 1. Carrega o PDF da Frente
-            const frontBytes = await fetch(tipoArquivo).then(res => res.arrayBuffer());
-            const pdfDoc = await PDFDocument.load(frontBytes);
-            const frontPage = pdfDoc.getPages()[0];
-            const { width, height } = frontPage.getSize();
-            
-            // 2. Carrega e insere a FOTO do usuário
-            const fotoBytes = await fotoFile.arrayBuffer();
-            let fotoImage;
-            if (fotoFile.type === 'image/png') {
-                fotoImage = await pdfDoc.embedPng(fotoBytes);
-            } else {
-                fotoImage = await pdfDoc.embedJpg(fotoBytes);
+            const fotoInput = document.getElementById('foto');
+            if (fotoInput.files.length === 0) {
+                alert("Por favor, selecione uma foto.");
+                return;
             }
+            const fotoFile = fotoInput.files[0];
 
-            // 3. Carrega e insere o QR CODE fixo
-            // O arquivo deve se chamar "qr-code.png" e estar na mesma pasta
-            const qrBytes = await fetch('qr-code.png').then(res => res.arrayBuffer());
-            const qrImage = await pdfDoc.embedPng(qrBytes);
+            try {
+                const frontBytes = await fetch(tipoArquivo).then(res => res.arrayBuffer());
+                const pdfDoc = await PDFDocument.load(frontBytes);
+                const frontPage = pdfDoc.getPages()[0];
+                const { width, height } = frontPage.getSize();
+                
+                const fotoBytes = await fotoFile.arrayBuffer();
+                let fotoImage;
+                if (fotoFile.type === 'image/png') {
+                    fotoImage = await pdfDoc.embedPng(fotoBytes);
+                } else {
+                    fotoImage = await pdfDoc.embedJpg(fotoBytes);
+                }
 
-            // --- DESENHAR ELEMENTOS NA TELA ---
-            
-            if (CALIBRATION_MODE) {
-                // Desenha retângulos vermelhos para calibrar Foto e QR Code
-                const drawRect = (pos, label) => {
-                    frontPage.drawRectangle({
-                        x: pos.x, y: pos.y, width: pos.w, height: pos.h,
-                        borderColor: rgb(1, 0, 0), borderWidth: 1,
+                const qrBytes = await fetch('qr-code.png').then(res => res.arrayBuffer());
+                const qrImage = await pdfDoc.embedPng(qrBytes);
+
+                const fontSize = 6;
+                const drawText = (text, pos, size = fontSize, color = rgb(0,0,0)) => {
+                    frontPage.drawText(text || "", { x: pos.x, y: pos.y, size: size, color: color });
+                };
+
+                if (CALIBRATION_MODE) {
+                    const drawRect = (pos, label) => {
+                        frontPage.drawRectangle({
+                            x: pos.x, y: pos.y, width: pos.w, height: pos.h,
+                            borderColor: rgb(1, 0, 0), borderWidth: 1,
+                        });
+                        frontPage.drawText(label, { x: pos.x, y: pos.y + pos.h + 2, size: 6, color: rgb(1, 0, 0) });
+                    };
+
+                    drawRect(POSICOES.foto, "FOTO");
+                    drawRect(POSICOES.qrcode, "QR");
+                    
+                    for (let y = 0; y < height; y += 10) {
+                        frontPage.drawLine({ start: { x: 0, y: y }, end: { x: width, y: y }, color: rgb(1, 0, 0), opacity: 0.3, thickness: 0.5 });
+                    }
+                    for (let x = 0; x < width; x += 20) {
+                        frontPage.drawLine({ start: { x: x, y: 0 }, end: { x: x, y: height }, color: rgb(1, 0, 0), opacity: 0.3, thickness: 0.5 });
+                    }
+
+                    drawText("NOME", POSICOES.nome, 6, rgb(1,0,0));
+                    drawText("VALIDADE", POSICOES.validade, 6, rgb(1,0,0)); 
+
+                } else {
+                    frontPage.drawImage(fotoImage, {
+                        x: POSICOES.foto.x, y: POSICOES.foto.y,
+                        width: POSICOES.foto.w, height: POSICOES.foto.h,
                     });
-                    frontPage.drawText(label, { x: pos.x, y: pos.y + pos.h + 2, size: 6, color: rgb(1, 0, 0) });
-                };
 
-                drawRect(POSICOES.foto, "FOTO");
-                drawRect(POSICOES.qrcode, "QR");
+                    frontPage.drawImage(qrImage, {
+                        x: POSICOES.qrcode.x, y: POSICOES.qrcode.y,
+                        width: POSICOES.qrcode.w, height: POSICOES.qrcode.h,
+                    });
 
-                // Réguas
-                for (let y = 0; y < height; y += 10) {
-                    frontPage.drawLine({ start: { x: 0, y: y }, end: { x: width, y: y }, color: rgb(1, 0, 0), opacity: 0.3, thickness: 0.5 });
-                    frontPage.drawText(`${y}`, { x: 2, y: y + 1, size: 5, color: rgb(1, 0, 0) });
-                }
-                for (let x = 0; x < width; x += 20) {
-                    frontPage.drawLine({ start: { x: x, y: 0 }, end: { x: x, y: height }, color: rgb(1, 0, 0), opacity: 0.3, thickness: 0.5 });
-                    frontPage.drawText(`${x}`, { x: x + 1, y: height - 8, size: 5, color: rgb(1, 0, 0) });
+                    drawText(nome, POSICOES.nome);
+                    drawText(nascimento, POSICOES.nascimento);
+                    drawText(estilo, POSICOES.estilo);
+                    drawText(academia, POSICOES.academia);
+                    drawText(numero, POSICOES.numero);
+                    drawText(DATA_VALIDADE, POSICOES.validade); 
                 }
 
-                // Textos de teste
-                const fontSize = 6;
-                frontPage.drawText("NOME AQUI", { x: POSICOES.nome.x, y: POSICOES.nome.y, size: fontSize, color: rgb(1, 0, 0) });
-                frontPage.drawText("NASCIMENTO", { x: POSICOES.nascimento.x, y: POSICOES.nascimento.y, size: fontSize, color: rgb(1, 0, 0) });
-                frontPage.drawText("ESTILO AQUI", { x: POSICOES.estilo.x, y: POSICOES.estilo.y, size: fontSize, color: rgb(1, 0, 0) });
-                frontPage.drawText("ACADEMIA AQUI", { x: POSICOES.academia.x, y: POSICOES.academia.y, size: fontSize, color: rgb(1, 0, 0) });
+                const backBytes = await fetch('verso.pdf').then(res => res.arrayBuffer());
+                const backPdf = await PDFDocument.load(backBytes);
+                const [versoPage] = await pdfDoc.copyPages(backPdf, [0]);
+                pdfDoc.addPage(versoPage);
 
-            } else {
-                // MODO REAL
-                // Foto
-                frontPage.drawImage(fotoImage, {
-                    x: POSICOES.foto.x, y: POSICOES.foto.y,
-                    width: POSICOES.foto.w, height: POSICOES.foto.h,
-                });
+                const pdfBytes = await pdfDoc.save();
+                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = `Carteira_${nome.replace(/\s+/g, '_')}.pdf`;
+                link.click();
 
-                // QR Code
-                frontPage.drawImage(qrImage, {
-                    x: POSICOES.qrcode.x, y: POSICOES.qrcode.y,
-                    width: POSICOES.qrcode.w, height: POSICOES.qrcode.h,
-                });
-
-                // Textos
-                const fontSize = 6;
-                const drawField = (text, pos) => {
-                    frontPage.drawText(text || "", { x: pos.x, y: pos.y, size: fontSize, color: rgb(0, 0, 0) });
-                };
-                drawField(nome, POSICOES.nome);
-                drawField(nascimento, POSICOES.nascimento);
-                drawField(estilo, POSICOES.estilo);
-                drawField(academia, POSICOES.academia);
+            } catch (error) {
+                console.error(error);
+                alert("Erro! Verifique os arquivos na pasta e o console (F12) para detalhes.");
             }
-
-            // 4. Copia o Verso e Salva
-            const backBytes = await fetch('verso.pdf').then(res => res.arrayBuffer());
-            const backPdf = await PDFDocument.load(backBytes);
-            const [versoPage] = await pdfDoc.copyPages(backPdf, [0]);
-            pdfDoc.addPage(versoPage);
-
-            const pdfBytes = await pdfDoc.save();
-            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = `Carteira_${nome.replace(/\s+/g, '_')}.pdf`;
-            link.click();
-
-        } catch (error) {
-            console.error(error);
-            alert("Erro! Verifique se todos os arquivos (incluindo qr-code.png) estão na pasta.");
-        }
-    });
-</script>
+        });
+    </script>
 </body>
 </html>
